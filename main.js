@@ -1,8 +1,11 @@
 import * as THREE from 'three';
 
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
 const targetElement = 'threejs-container';
 let container;
 let renderer, scene, camera;
+let controls;
 
 function init() {
 
@@ -31,6 +34,10 @@ function init() {
     );
     camera.position.set(10, 10, 10);
     camera.lookAt(0, 0, 0);
+
+    // Add orbit controls
+    controls = new OrbitControls( camera, renderer.domElement );
+    controls.enableDamping = true;
 
     // Ambient Light
     const ambientLight = new THREE.AmbientLight( 0x999999 );
@@ -73,6 +80,10 @@ function onWindowResize() {
  */
 function animate() {
     requestAnimationFrame( animate );
+
+    // required if controls.enableDamping or controls.autoRotate are set to true
+    controls.update();
+
     renderer.render( scene, camera );
 }
 
