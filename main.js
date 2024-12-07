@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import GUI from 'lil-gui';
 
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import Stats from 'three/addons/libs/stats.module.js';
@@ -8,6 +9,29 @@ let container;
 let renderer, scene, camera;
 let controls;
 let stats;
+
+// Geometry
+let cube;
+let cubeGeometry;
+
+const gui = new GUI();
+
+const guiConfig = {
+  boxSize: 1
+};
+
+const boxConfig = gui.addFolder('Box');
+boxConfig.add( guiConfig, 'boxSize', 0.1, 5.0, 0.1).name('Size').onChange( value => {
+
+    // Create a new BoxGeometry
+    cubeGeometry.dispose();
+    cubeGeometry = new THREE.BoxGeometry(value, value, value);
+
+    // Assign the new geometry to the cube
+    cube.geometry = cubeGeometry;
+    cube.geometry.computeBoundingBox();
+    cube.geometry.attributes.position.needsUpdate = true;
+});
 
 function init() {
 
@@ -62,9 +86,9 @@ function init() {
     scene.add( axesHelper );
 
     // Add a Box at the origin
-    const geometry = new THREE.BoxGeometry( 1, 1, 1 );
-    const material = new THREE.MeshStandardMaterial( {color: 0xCCCCCC} );
-    const cube = new THREE.Mesh( geometry, material );
+    cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
+    const cubeMaterial = new THREE.MeshStandardMaterial( {color: 0xCCCCCC} );
+    cube = new THREE.Mesh( cubeGeometry, cubeMaterial );
     cube.castShadow = true;
     scene.add( cube );
 
