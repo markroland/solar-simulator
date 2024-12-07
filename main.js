@@ -18,6 +18,8 @@ function init() {
     renderer.useLegacyLights = false;
     renderer.setPixelRatio( window.devicePixelRatio );
     renderer.setSize( window.innerWidth, window.innerHeight );
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.setAnimationLoop( animate );
 
     // Set the container for the output
@@ -48,6 +50,7 @@ function init() {
     // Add a Directional Light
     const directionalLight = new THREE.DirectionalLight( 0xffffff, 5 );
     directionalLight.position.set(5, 2.5, 0);
+    directionalLight.castShadow = true;
     scene.add( directionalLight );
 
     // Add a Directional Light Helper
@@ -62,7 +65,17 @@ function init() {
     const geometry = new THREE.BoxGeometry( 1, 1, 1 );
     const material = new THREE.MeshStandardMaterial( {color: 0xCCCCCC} );
     const cube = new THREE.Mesh( geometry, material );
+    cube.castShadow = true;
     scene.add( cube );
+
+    // Create a ground plane that can receive a shadow
+    const planeGeometry = new THREE.PlaneGeometry(10, 10);
+    const planeMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.0, metalness: 0.0 });
+    const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+    plane.rotation.x = -0.5 * Math.PI;
+    plane.position.y = -0.5;
+    plane.receiveShadow = true;
+    scene.add(plane);
 
     // Add a resize listener
     window.addEventListener( 'resize', onWindowResize );
