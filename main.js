@@ -13,6 +13,7 @@ function init() {
     renderer.useLegacyLights = false;
     renderer.setPixelRatio( window.devicePixelRatio );
     renderer.setSize( window.innerWidth, window.innerHeight );
+    renderer.setAnimationLoop( animate );
 
     // Set the container for the output
     container = document.getElementById(targetElement);
@@ -54,8 +55,25 @@ function init() {
     const cube = new THREE.Mesh( geometry, material );
     scene.add( cube );
 
-    // Render the scene once
-    renderer.render(scene, camera);
+    // Add a resize listener
+    window.addEventListener( 'resize', onWindowResize );
+}
+
+/**
+ * Update when window resizes
+ **/
+function onWindowResize() {
+    renderer.setSize( window.innerWidth, window.innerHeight );
+    camera.aspect = ( window.innerWidth / window.innerHeight );
+    camera.updateProjectionMatrix();
+}
+
+/**
+ * Animation callback function
+ */
+function animate() {
+    requestAnimationFrame( animate );
+    renderer.render( scene, camera );
 }
 
 // Call the initialization function to kick everything off
