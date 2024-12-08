@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import Stats from 'three/addons/libs/stats.module.js';
 
 const targetElement = 'threejs-container';
 let container;
 let renderer, scene, camera;
 let controls;
+let stats;
 
 function init() {
 
@@ -64,6 +66,10 @@ function init() {
 
     // Add a resize listener
     window.addEventListener( 'resize', onWindowResize );
+
+    // Add a performance indicator (Optional)
+    stats = new Stats();
+    document.body.appendChild( stats.dom );
 }
 
 /**
@@ -85,6 +91,8 @@ function animate() {
     controls.update();
 
     renderer.render( scene, camera );
+
+    stats.update();
 }
 
 // Call the initialization function to kick everything off
