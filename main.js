@@ -40,8 +40,14 @@ const guiConfig = {
 };
 
 const sunConfig = gui.addFolder('Sun Position');
-sunConfig.add(guiConfig, 'latitude', -90, 90, 0.0001).name('Latitude').onChange(updateSunPosition);
-sunConfig.add(guiConfig, 'longitude', -180, 180, 0.0001).name('Longitude').onChange(updateSunPosition);
+const latitudeController = sunConfig
+  .add(guiConfig, 'latitude', -90, 90, 0.0001)
+  .name('Latitude')
+  .onChange(updateSunPosition);
+const longitudeController = sunConfig
+  .add(guiConfig, 'longitude', -180, 180, 0.0001)
+  .name('Longitude')
+  .onChange(updateSunPosition);
 sunConfig.add(guiConfig, 'dateString').name('Date (YYYY-MM-DD)').onChange(updateSunPosition);
 const timeMinutesController = sunConfig
   .add(guiConfig, 'timeMinutes', 0, 24 * 60, 1)
@@ -212,6 +218,32 @@ function updateTimeMinutesToNow() {
   const now = new Date();
   guiConfig.timeMinutes = now.getHours() * 60 + now.getMinutes();
   timeMinutesController.updateDisplay();
+  updateSunPosition();
+}
+
+function parseLocationFromUrl() {
+  const urlText = `${window.location.pathname}${window.location.search}`;
+  const match = urlText.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+  if (!match) {
+    return null;
+  }
+  const lat = Number(match[1]);
+  const lng = Number(match[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null;
+  }
+  return { lat, lng };
+}
+
+function applyLocationFromUrl() {
+  const coords = parseLocationFromUrl();
+  if (!coords) {
+    return;
+  }
+  guiConfig.latitude = coords.lat;
+  guiConfig.longitude = coords.lng;
+  latitudeController.updateDisplay();
+  longitudeController.updateDisplay();
   updateSunPosition();
 }
 
@@ -402,6 +434,9 @@ function init() {
 
   // Create a Scene
   scene = new THREE.Scene();
+
+  applyLocationFromUrl();
+  window.addEventListener('popstate', applyLocationFromUrl);
 
   updateTimeMinutesToNow();
   setInterval(updateTimeMinutesToNow, 5000);
