@@ -54,6 +54,7 @@ let sunPathLine;
 let winterSolsticeLine;
 let summerSolsticeLine;
 let sunInfoEl;
+let sunGlow;
 
 function createCompassRose(radius) {
   const group = new THREE.Group();
@@ -132,6 +133,38 @@ function createCompassRose(radius) {
   return group;
 }
 
+function createSunGlowSprite() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  const centerX = canvas.width / 2;
+  const centerY = canvas.height / 2;
+  const radius = canvas.width / 2;
+
+  const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
+  gradient.addColorStop(0, 'rgba(255, 244, 200, 0.95)');
+  gradient.addColorStop(0.4, 'rgba(255, 210, 90, 0.6)');
+  gradient.addColorStop(1, 'rgba(255, 210, 90, 0.0)');
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(1.8, 1.8, 1);
+  return sprite;
+}
+
 /**
  * Update the sun (directional light) position based on latitude, longitude, and time
  */
@@ -150,6 +183,9 @@ function updateSunPosition() {
     directionalLight.target.updateMatrixWorld();
     if (directionalLightHelper) {
       directionalLightHelper.update();
+    }
+    if (sunGlow) {
+      sunGlow.position.copy(directionalLight.position);
     }
   }
   updateSunInfo(sunPos);
@@ -384,7 +420,10 @@ function init() {
 
   // Add a Directional Light Helper
   directionalLightHelper = new THREE.DirectionalLightHelper(directionalLight, 0.5, 0xff0000);
-  scene.add(directionalLightHelper);
+  // scene.add(directionalLightHelper);
+
+  sunGlow = createSunGlowSprite();
+  scene.add(sunGlow);
 
   updateSunPosition();
   updateSunPath();
