@@ -399,6 +399,8 @@ function init() {
   // Add orbit controls
   controls = new OrbitControls( camera, renderer.domElement );
   controls.enableDamping = true;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.4;
 
   // Ambient Light
   const ambientLight = new THREE.AmbientLight( 0x999999 );
