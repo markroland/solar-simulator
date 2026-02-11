@@ -3,6 +3,9 @@ import GUI from 'lil-gui';
 import SunCalc from 'suncalc';
 
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
+
 import Stats from 'three/addons/libs/stats.module.js';
 
 const latitude =  37.7749; // Default: San Francisco
@@ -327,6 +330,35 @@ function init() {
   // Create a Scene
   scene = new THREE.Scene();
 
+  /**
+   * Models
+   */
+  const dracoLoader = new DRACOLoader()
+  dracoLoader.setDecoderPath('/draco/')
+
+  const gltfLoader = new GLTFLoader()
+  gltfLoader.setDRACOLoader(dracoLoader)
+
+  let mixer = null
+
+  gltfLoader.load(
+    '/models/house.glb',
+    (gltf) => {
+      gltf.scene.rotation.y = THREE.MathUtils.degToRad(270 + 25);
+      gltf.scene.traverse((child) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+      scene.add(gltf.scene)
+    },
+    undefined,
+    (error) => {
+      console.error('Failed to load house model:', error);
+    }
+  )
+
   // Add the Camera
   camera = new THREE.PerspectiveCamera(60,
     window.innerWidth / window.innerHeight,
@@ -362,6 +394,7 @@ function init() {
   scene.add( axesHelper );
 
   // Add a Box at the origin
+  /*
   cubeGeometry = new THREE.BoxGeometry(3, 1, 2);
   const cubeMaterial = new THREE.MeshStandardMaterial( {color: 0xCCCCCC} );
   cube = new THREE.Mesh( cubeGeometry, cubeMaterial );
@@ -369,6 +402,7 @@ function init() {
   cube.rotation.y = THREE.MathUtils.degToRad(25);
   cube.castShadow = true;
   scene.add( cube );
+  //*/
 
   // Create a circular ground plane that can receive a shadow
   const planeGeometry = new THREE.CircleGeometry(10, 64);
