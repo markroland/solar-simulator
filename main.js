@@ -32,16 +32,6 @@ const guiConfig = {
   timeMinutes: 12 * 60,
 };
 
-const boxConfig = gui.addFolder('Box');
-boxConfig.add(guiConfig, 'boxSize', 0.1, 5.0, 0.1).name('Size').onChange(value => {
-  cubeGeometry.dispose();
-  cubeGeometry = new THREE.BoxGeometry(value, value, value);
-  cube.geometry = cubeGeometry;
-  cube.geometry.computeBoundingBox();
-  cube.geometry.attributes.position.needsUpdate = true;
-  cube.position.y = groundY + value / 2;
-});
-
 const sunConfig = gui.addFolder('Sun Position');
 sunConfig.add(guiConfig, 'latitude', -90, 90, 0.0001).name('Latitude').onChange(updateSunPosition);
 sunConfig.add(guiConfig, 'longitude', -180, 180, 0.0001).name('Longitude').onChange(updateSunPosition);
