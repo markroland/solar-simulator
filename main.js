@@ -5,6 +5,11 @@ import SunCalc from 'suncalc';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js'
+import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js'
+import { Line2 } from 'three/examples/jsm/lines/Line2.js'
+import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js'
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
 
 import Stats from 'three/addons/libs/stats.module.js';
 
@@ -31,14 +36,17 @@ const guiConfig = {
   latitude: latitude,
   longitude: longitude,
   dateString: new Date().toISOString().slice(0, 10),
-  timeMinutes: 12 * 60,
+  timeMinutes: 0,
 };
 
 const sunConfig = gui.addFolder('Sun Position');
 sunConfig.add(guiConfig, 'latitude', -90, 90, 0.0001).name('Latitude').onChange(updateSunPosition);
 sunConfig.add(guiConfig, 'longitude', -180, 180, 0.0001).name('Longitude').onChange(updateSunPosition);
 sunConfig.add(guiConfig, 'dateString').name('Date (YYYY-MM-DD)').onChange(updateSunPosition);
-sunConfig.add(guiConfig, 'timeMinutes', 0, 24 * 60, 1).name('Time (min)').onChange(updateSunPosition);
+const timeMinutesController = sunConfig
+  .add(guiConfig, 'timeMinutes', 0, 24 * 60, 1)
+  .name('Time (min)')
+  .onChange(updateSunPosition);
 
 let directionalLight;
 let directionalLightHelper;
@@ -47,6 +55,7 @@ let winterSolsticeLine;
 let summerSolsticeLine;
 let sunInfoEl;
 let sunGlow;
+let compassTicksLine;
 
 function createCompassRose(radius) {
   const group = new THREE.Group();
@@ -73,13 +82,18 @@ function createCompassRose(radius) {
     tickPositions.push(xInner, 0.01, zInner, xOuter, 0.01, zOuter);
   }
 
-  const tickGeometry = new THREE.BufferGeometry();
-  tickGeometry.setAttribute('position', new THREE.Float32BufferAttribute(tickPositions, 3));
-  const tickMaterial = new THREE.LineBasicMaterial({ color: 0x111111 });
-  const ticks = new THREE.LineSegments(tickGeometry, tickMaterial);
-  group.add(ticks);
+  const tickGeometry = new LineSegmentsGeometry();
+  tickGeometry.setPositions(tickPositions);
+  const tickMaterial = new LineMaterial({
+    color: 0x111111,
+    linewidth: 3,
+    resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
+  });
+  compassTicksLine = new LineSegments2(tickGeometry, tickMaterial);
+  compassTicksLine.computeLineDistances();
+  group.add(compassTicksLine);
 
-  const labelMaterialColor = '#111111';
+  const labelMaterialColor = '#FFFFFF';
   const labelScale = { x: 2.2, y: 0.6, z: 1 };
 
   function makeLabel(text) {
@@ -89,7 +103,7 @@ function createCompassRose(radius) {
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = labelMaterialColor;
-    ctx.font = 'bold 36px Georgia';
+    ctx.font = 'bold 36px Helvetica';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, canvas.width / 2, canvas.height / 2);
@@ -194,6 +208,13 @@ function getSelectedDateTime() {
   return new Date(year, month - 1, day, hours, minutes, 0, 0);
 }
 
+function updateTimeMinutesToNow() {
+  const now = new Date();
+  guiConfig.timeMinutes = now.getHours() * 60 + now.getMinutes();
+  timeMinutesController.updateDisplay();
+  updateSunPosition();
+}
+
 function getSelectedDate() {
   const [year, month, day] = guiConfig.dateString.split('-').map(Number);
   if (!year || !month || !day) {
@@ -206,7 +227,7 @@ function formatTime(date) {
   if (!date || Number.isNaN(date.getTime())) {
     return '--:--';
   }
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 function normalizeDegrees(deg) {
@@ -223,7 +244,7 @@ function getSolsticeDates(year, latitude) {
 }
 
 function buildSunPathGeometry(date, latitude, longitude, radius) {
-  const points = [];
+  const positions = [];
   const stepMinutes = 10;
 
   for (let minutes = 0; minutes <= 24 * 60; minutes += stepMinutes) {
@@ -238,10 +259,12 @@ function buildSunPathGeometry(date, latitude, longitude, radius) {
     const x = radius * Math.cos(azimuth) * Math.cos(sunPos.altitude);
     const y = radius * Math.sin(sunPos.altitude);
     const z = radius * Math.sin(azimuth) * Math.cos(sunPos.altitude);
-    points.push(new THREE.Vector3(x, y, z));
+    positions.push(x, y, z);
   }
 
-  return new THREE.BufferGeometry().setFromPoints(points);
+  const geometry = new LineGeometry();
+  geometry.setPositions(positions);
+  return geometry;
 }
 
 function updateSunPath() {
@@ -254,8 +277,13 @@ function updateSunPath() {
   const selectedDate = new Date(year, month - 1, day, 12, 0, 0, 0);
   const geometry = buildSunPathGeometry(selectedDate, latitude, longitude, radius);
   if (!sunPathLine) {
-    const material = new THREE.LineBasicMaterial({ color: 0xffd200 });
-    sunPathLine = new THREE.Line(geometry, material);
+    const material = new LineMaterial({
+      color: 0xffd200,
+      linewidth: 2,
+      resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
+    });
+    sunPathLine = new Line2(geometry, material);
+    sunPathLine.computeLineDistances();
     scene.add(sunPathLine);
   } else {
     sunPathLine.geometry.dispose();
@@ -265,8 +293,13 @@ function updateSunPath() {
   const { summer, winter } = getSolsticeDates(year, latitude);
   const summerGeometry = buildSunPathGeometry(summer, latitude, longitude, radius);
   if (!summerSolsticeLine) {
-    const summerMaterial = new THREE.LineBasicMaterial({ color: 0x00b050 });
-    summerSolsticeLine = new THREE.Line(summerGeometry, summerMaterial);
+    const summerMaterial = new LineMaterial({
+      color: 0x00b050,
+      linewidth: 1,
+      resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
+    });
+    summerSolsticeLine = new Line2(summerGeometry, summerMaterial);
+    summerSolsticeLine.computeLineDistances();
     scene.add(summerSolsticeLine);
   } else {
     summerSolsticeLine.geometry.dispose();
@@ -275,8 +308,13 @@ function updateSunPath() {
 
   const winterGeometry = buildSunPathGeometry(winter, latitude, longitude, radius);
   if (!winterSolsticeLine) {
-    const winterMaterial = new THREE.LineBasicMaterial({ color: 0xd62b2b });
-    winterSolsticeLine = new THREE.Line(winterGeometry, winterMaterial);
+    const winterMaterial = new LineMaterial({
+      color: 0xd62b2b,
+      linewidth: 1,
+      resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
+    });
+    winterSolsticeLine = new Line2(winterGeometry, winterMaterial);
+    winterSolsticeLine.computeLineDistances();
     scene.add(winterSolsticeLine);
   } else {
     winterSolsticeLine.geometry.dispose();
@@ -288,8 +326,11 @@ function updateSunInfo(sunPos) {
   if (!sunInfoEl) {
     return;
   }
+  const [year, month, day] = guiConfig.dateString.split('-').map(Number);
+  const formattedDate = year && month && day ? `${month}/${day}/${year}` : '--/--/----';
   const azimuthDeg = THREE.MathUtils.radToDeg(sunPos.azimuth);
   const altitudeDeg = THREE.MathUtils.radToDeg(sunPos.altitude);
+  const selectedTime = getSelectedDateTime();
   const times = SunCalc.getTimes(getSelectedDate(), guiConfig.latitude, guiConfig.longitude);
   const sunrise = times.sunrise;
   const sunset = times.sunset;
@@ -312,6 +353,10 @@ function updateSunInfo(sunPos) {
   }
 
   sunInfoEl.textContent = [
+    `Date: ${formattedDate}`,
+    `Time: ${formatTime(selectedTime)}`,
+    `Latitude: ${guiConfig.latitude.toFixed(4)}`,
+    `Longitude: ${guiConfig.longitude.toFixed(4)}`,
     `Azimuth: ${azimuthDeg.toFixed(2)} deg`,
     `Altitude: ${altitudeDeg.toFixed(2)} deg`,
     `Sunrise: ${formatTime(sunrise)}`,
@@ -357,6 +402,9 @@ function init() {
 
   // Create a Scene
   scene = new THREE.Scene();
+
+  updateTimeMinutesToNow();
+  setInterval(updateTimeMinutesToNow, 5000);
 
   /**
    * Models
@@ -424,7 +472,7 @@ function init() {
 
   // Add Axis references
   const axesHelper = new THREE.AxesHelper( 5 );
-  scene.add( axesHelper );
+  // scene.add( axesHelper );
 
   // Add a Box at the origin
   /*
@@ -464,6 +512,18 @@ function onWindowResize() {
   renderer.setSize( window.innerWidth, window.innerHeight );
   camera.aspect = ( window.innerWidth / window.innerHeight );
   camera.updateProjectionMatrix();
+  if (compassTicksLine) {
+    compassTicksLine.material.resolution.set(window.innerWidth, window.innerHeight);
+  }
+  if (sunPathLine) {
+    sunPathLine.material.resolution.set(window.innerWidth, window.innerHeight);
+  }
+  if (summerSolsticeLine) {
+    summerSolsticeLine.material.resolution.set(window.innerWidth, window.innerHeight);
+  }
+  if (winterSolsticeLine) {
+    winterSolsticeLine.material.resolution.set(window.innerWidth, window.innerHeight);
+  }
 }
 
 /**
