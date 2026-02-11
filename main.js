@@ -23,6 +23,8 @@ let cube;
 let cubeGeometry;
 
 const gui = new GUI();
+gui.title('Sun Controls');
+gui.hide();
 
 const guiConfig = {
   boxSize: 1,
