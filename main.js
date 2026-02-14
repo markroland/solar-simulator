@@ -29,7 +29,8 @@ let cubeGeometry;
 
 const gui = new GUI();
 gui.title('Sun Controls');
-gui.hide();
+// gui.hide();
+let isGuiVisible = true;
 
 const guiConfig = {
   boxSize: 1,
@@ -39,29 +40,129 @@ const guiConfig = {
   timeMinutes: 0,
 };
 
-const sunConfig = gui.addFolder('Sun Position');
-const latitudeController = sunConfig
+const locationConfig = gui.addFolder('Location');
+const latitudeController = locationConfig
   .add(guiConfig, 'latitude', -90, 90, 0.0001)
   .name('Latitude')
   .onChange(updateSunPosition);
-const longitudeController = sunConfig
+const longitudeController = locationConfig
   .add(guiConfig, 'longitude', -180, 180, 0.0001)
   .name('Longitude')
   .onChange(updateSunPosition);
-sunConfig.add(guiConfig, 'dateString').name('Date (YYYY-MM-DD)').onChange(updateSunPosition);
+
+const sunConfig = gui.addFolder('Date & Time');
+const dateStringController = sunConfig
+  .add(guiConfig, 'dateString')
+  .name('Date (YYYY-MM-DD)')
+  .onChange(updateSunPosition);
+let autoTimeIntervalId = null;
 const timeMinutesController = sunConfig
   .add(guiConfig, 'timeMinutes', 0, 24 * 60, 1)
   .name('Time (min)')
-  .onChange(updateSunPosition);
+  .onChange(() => {
+    // Stop the automated time update if the user adjusts the time via GUI
+    if (autoTimeIntervalId !== null) {
+      clearInterval(autoTimeIntervalId);
+      autoTimeIntervalId = null;
+    }
+    updateSunPosition();
+  });
+sunConfig.add({ now: setDateAndTimeToNow }, 'now').name('Now');
 
 let directionalLight;
 let directionalLightHelper;
 let sunPathLine;
 let winterSolsticeLine;
 let summerSolsticeLine;
+
 let sunInfoEl;
 let sunGlow;
 let compassTicksLine;
+let heading155Line;
+let heading155TiltedLine;
+
+
+// Line showing sun direction from center to edge
+let sunDirectionLine;
+// Lines for sunrise and sunset directions
+let sunriseDirectionLine;
+let sunsetDirectionLine;
+
+// Sprites for sunrise, current, and sunset degree labels
+let sunriseLabelSprite;
+let sunsetLabelSprite;
+let sunCurrentLabelSprite;
+
+function makeDegreeLabel(text, color = '#FFD700') {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = color;
+  ctx.font = 'bold 32px Helvetica';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(2.2, 0.6, 1);
+  return sprite;
+}
+
+function toCompassHeadingDegrees(sunCalcAzimuthRad) {
+  const heading = (THREE.MathUtils.radToDeg(sunCalcAzimuthRad) + 180) % 360;
+  return heading < 0 ? heading + 360 : heading;
+}
+
+function disposeLine2(line) {
+  if (!line) {
+    return;
+  }
+  scene.remove(line);
+  line.geometry.dispose();
+  line.material.dispose();
+}
+
+function disposeSprite(sprite) {
+  if (!sprite) {
+    return;
+  }
+  scene.remove(sprite);
+  if (sprite.material?.map) {
+    sprite.material.map.dispose();
+  }
+  sprite.material.dispose();
+}
+
+function onKeyDown(event) {
+  const targetTag = event.target?.tagName;
+  const isTypingTarget = targetTag === 'INPUT' || targetTag === 'TEXTAREA' || event.target?.isContentEditable;
+  if (isTypingTarget) {
+    return;
+  }
+
+  if (event.code === 'Space') {
+    event.preventDefault();
+    if (controls) {
+      controls.autoRotate = !controls.autoRotate;
+    }
+    return;
+  }
+
+  if (event.key?.toLowerCase() === 'h') {
+    if (isGuiVisible) {
+      gui.hide();
+    } else {
+      gui.show();
+    }
+    isGuiVisible = !isGuiVisible;
+  }
+}
 
 function createCompassRose(radius) {
   const group = new THREE.Group();
@@ -145,6 +246,48 @@ function createCompassRose(radius) {
   return group;
 }
 
+function createGroundHeadingLine(headingDegrees, radius = 10) {
+  const angleRad = THREE.MathUtils.degToRad(headingDegrees - 90);
+  const x = radius * Math.cos(angleRad);
+  const z = radius * Math.sin(angleRad);
+
+  const geometry = new LineGeometry();
+  geometry.setPositions([0, 0.01, 0, x, 0.01, z]);
+
+  const material = new LineMaterial({
+    color: 0x333333,
+    linewidth: 2,
+    resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
+  });
+
+  const line = new Line2(geometry, material);
+  line.computeLineDistances();
+  return line;
+}
+
+function createTiltedHeadingLine(headingDegrees, tiltUpDegrees, length = 10) {
+  const headingRad = THREE.MathUtils.degToRad(headingDegrees - 90);
+  const tiltRad = THREE.MathUtils.degToRad(tiltUpDegrees);
+
+  const horizontalLength = length * Math.cos(tiltRad);
+  const x = horizontalLength * Math.cos(headingRad);
+  const y = length * Math.sin(tiltRad);
+  const z = horizontalLength * Math.sin(headingRad);
+
+  const geometry = new LineGeometry();
+  geometry.setPositions([0, 0.01, 0, x, y + 0.01, z]);
+
+  const material = new LineMaterial({
+    color: 0x666666,
+    linewidth: 2,
+    resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
+  });
+
+  const line = new Line2(geometry, material);
+  line.computeLineDistances();
+  return line;
+}
+
 function createSunGlowSprite() {
   const canvas = document.createElement('canvas');
   canvas.width = 128;
@@ -177,12 +320,66 @@ function createSunGlowSprite() {
   return sprite;
 }
 
+function createSolarPanelMesh() {
+  const panelWidth = 1.5;
+  const panelHeight = 2.5;
+  const panelGeometry = new THREE.PlaneGeometry(panelWidth, panelHeight);
+  // Lay panel flat in XZ plane and move it so one edge is anchored at local z=0.
+  panelGeometry.rotateX(-Math.PI / 2);
+  panelGeometry.translate(0, 0, -panelHeight / 2);
+  const panelMaterial = new THREE.MeshStandardMaterial({
+    color: 0x1f3f7a,
+    metalness: 0.35,
+    roughness: 0.25,
+    side: THREE.DoubleSide
+  });
+  const panelMesh = new THREE.Mesh(panelGeometry, panelMaterial);
+  panelMesh.castShadow = false;
+  panelMesh.receiveShadow = false;
+  return panelMesh;
+}
+
 /**
  * Update the sun (directional light) position based on latitude, longitude, and time
  */
 function updateSunPosition() {
   const { latitude, longitude } = guiConfig;
   const sunPos = SunCalc.getPosition(getSelectedDateTime(), latitude, longitude);
+
+  // Sky color: noon sky-blue, sunset dark-blue, night black.
+  let skyColor;
+  if (renderer) {
+    const nightColor = new THREE.Color('#000000');
+    const sunsetColor = new THREE.Color('#0a2342');
+    const dayColor = new THREE.Color('#87ceeb');
+    if (sunPos.altitude <= 0) {
+      const nightBlend = THREE.MathUtils.clamp((sunPos.altitude + 0.2) / 0.2, 0, 1);
+      skyColor = new THREE.Color().lerpColors(nightColor, sunsetColor, nightBlend);
+    } else {
+      const dayBlend = THREE.MathUtils.clamp(sunPos.altitude / 1.2, 0, 1);
+      skyColor = new THREE.Color().lerpColors(sunsetColor, dayColor, dayBlend);
+    }
+    renderer.setClearColor(skyColor, 1);
+  }
+
+  if (compassTicksLine && skyColor) {
+    compassTicksLine.material.color.copy(skyColor);
+  }
+
+  disposeSprite(sunriseLabelSprite);
+  disposeSprite(sunsetLabelSprite);
+  disposeSprite(sunCurrentLabelSprite);
+  sunriseLabelSprite = null;
+  sunsetLabelSprite = null;
+  sunCurrentLabelSprite = null;
+
+  disposeLine2(sunDirectionLine);
+  disposeLine2(sunriseDirectionLine);
+  disposeLine2(sunsetDirectionLine);
+  sunDirectionLine = null;
+  sunriseDirectionLine = null;
+  sunsetDirectionLine = null;
+
   // SunCalc azimuth is measured from south, westward positive; align to east=0, south=PI/2.
   const radius = 10; // Distance from origin
   const azimuth = sunPos.azimuth + Math.PI / 2;
@@ -199,7 +396,76 @@ function updateSunPosition() {
     if (sunGlow) {
       sunGlow.position.copy(directionalLight.position);
     }
+    directionalLight.intensity = sunPos.altitude > 0 ? 5 : 0;
   }
+
+  // Current sun direction line and heading label (only above horizon).
+  if (sunPos.altitude > 0) {
+    const xEdge = radius * Math.cos(azimuth);
+    const zEdge = radius * Math.sin(azimuth);
+    const lineGeom = new LineGeometry();
+    lineGeom.setPositions([0, 0.01, 0, xEdge, 0.01, zEdge]);
+    const lineMat = new LineMaterial({
+      color: 0xB8860B, // dark yellow (goldenrod)
+      linewidth: 4,
+      resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
+    });
+    sunDirectionLine = new Line2(lineGeom, lineMat);
+    sunDirectionLine.computeLineDistances();
+    scene.add(sunDirectionLine);
+
+    const currentHeading = toCompassHeadingDegrees(sunPos.azimuth);
+    sunCurrentLabelSprite = makeDegreeLabel(`${currentHeading.toFixed(1)}°`, '#B8860B');
+    sunCurrentLabelSprite.position.set(xEdge * 1.08, 0.02, zEdge * 1.08);
+    scene.add(sunCurrentLabelSprite);
+  }
+
+  // Sunrise and sunset direction lines and heading labels.
+  const times = SunCalc.getTimes(getSelectedDate(), latitude, longitude);
+  if (times.sunrise && times.sunset) {
+    const sunrisePos = SunCalc.getPosition(times.sunrise, latitude, longitude);
+    const sunsetPos = SunCalc.getPosition(times.sunset, latitude, longitude);
+    const sunriseAz = sunrisePos.azimuth + Math.PI / 2;
+    const sunsetAz = sunsetPos.azimuth + Math.PI / 2;
+    // Project to XZ plane
+    const xSunrise = radius * Math.cos(sunriseAz);
+    const zSunrise = radius * Math.sin(sunriseAz);
+    const xSunset = radius * Math.cos(sunsetAz);
+    const zSunset = radius * Math.sin(sunsetAz);
+
+    const sunriseGeom = new LineGeometry();
+    sunriseGeom.setPositions([0, 0.01, 0, xSunrise, 0.01, zSunrise]);
+    const sunriseMat = new LineMaterial({
+      color: 0xFFD700, // yellow
+      linewidth: 3,
+      resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
+    });
+    sunriseDirectionLine = new Line2(sunriseGeom, sunriseMat);
+    sunriseDirectionLine.computeLineDistances();
+    scene.add(sunriseDirectionLine);
+
+    const sunriseHeading = toCompassHeadingDegrees(sunrisePos.azimuth);
+    sunriseLabelSprite = makeDegreeLabel(`${sunriseHeading.toFixed(1)}°`, '#FFD700');
+    sunriseLabelSprite.position.set(xSunrise * 1.08, 0.02, zSunrise * 1.08);
+    scene.add(sunriseLabelSprite);
+
+    const sunsetGeom = new LineGeometry();
+    sunsetGeom.setPositions([0, 0.01, 0, xSunset, 0.01, zSunset]);
+    const sunsetMat = new LineMaterial({
+      color: 0xFFD700, // yellow
+      linewidth: 3,
+      resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
+    });
+    sunsetDirectionLine = new Line2(sunsetGeom, sunsetMat);
+    sunsetDirectionLine.computeLineDistances();
+    scene.add(sunsetDirectionLine);
+
+    const sunsetHeading = toCompassHeadingDegrees(sunsetPos.azimuth);
+    sunsetLabelSprite = makeDegreeLabel(`${sunsetHeading.toFixed(1)}°`, '#FFD700');
+    sunsetLabelSprite.position.set(xSunset * 1.08, 0.02, zSunset * 1.08);
+    scene.add(sunsetLabelSprite);
+  }
+
   updateSunInfo(sunPos);
   updateSunPath();
 }
@@ -217,6 +483,18 @@ function getSelectedDateTime() {
 function updateTimeMinutesToNow() {
   const now = new Date();
   guiConfig.timeMinutes = now.getHours() * 60 + now.getMinutes();
+  timeMinutesController.updateDisplay();
+  updateSunPosition();
+}
+
+function setDateAndTimeToNow() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  guiConfig.dateString = `${year}-${month}-${day}`;
+  guiConfig.timeMinutes = now.getHours() * 60 + now.getMinutes();
+  dateStringController.updateDisplay();
   timeMinutesController.updateDisplay();
   updateSunPosition();
 }
@@ -328,6 +606,8 @@ function updateSunPath() {
     const summerMaterial = new LineMaterial({
       color: 0x00b050,
       linewidth: 1,
+      transparent: true,
+      opacity: 0.5,
       resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
     });
     summerSolsticeLine = new Line2(summerGeometry, summerMaterial);
@@ -343,6 +623,8 @@ function updateSunPath() {
     const winterMaterial = new LineMaterial({
       color: 0xd62b2b,
       linewidth: 1,
+      transparent: true,
+      opacity: 0.5,
       resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
     });
     winterSolsticeLine = new Line2(winterGeometry, winterMaterial);
@@ -439,7 +721,7 @@ function init() {
   window.addEventListener('popstate', applyLocationFromUrl);
 
   updateTimeMinutesToNow();
-  setInterval(updateTimeMinutesToNow, 5000);
+  autoTimeIntervalId = setInterval(updateTimeMinutesToNow, 5000);
 
   /**
    * Models
@@ -456,13 +738,44 @@ function init() {
     '/models/house.glb',
     (gltf) => {
       gltf.scene.rotation.y = THREE.MathUtils.degToRad(270 + 25);
+      // gltf.scene.rotation.y = THREE.MathUtils.degToRad(270);
       gltf.scene.traverse((child) => {
         if (child.isMesh) {
           child.castShadow = true;
           child.receiveShadow = true;
         }
       });
-      scene.add(gltf.scene)
+
+      const solarPanelPivot = new THREE.Group();
+      const solarPanel = createSolarPanelMesh();
+
+      // Keep bottom edge on a fixed Y plane.
+      solarPanelPivot.position.set(1.7, 1.2, 1.4);
+      // Rotate around vertical axis.
+      solarPanelPivot.rotation.y = THREE.MathUtils.degToRad(25);
+      // Tilt panel about its anchored bottom edge.
+      solarPanel.rotation.x = THREE.MathUtils.degToRad(24);
+
+      // solarPanelPivot.position.x += 1.4;
+      // solarPanelPivot.position.z += 1.8;
+
+      solarPanelPivot.add(solarPanel);
+
+      // solarPanel.rotation.z += THREE.MathUtils.degToRad(270);
+      // solarPanel.rotation.z += THREE.MathUtils.degToRad(45);
+      // solarPanel.rotation.x += THREE.MathUtils.degToRad(24);
+      // solarPanel.rotation.y += THREE.MathUtils.degToRad(-25);
+      // solarPanel.position.x += 0.7;
+      // solarPanel.position.z += 1.0;
+
+      // solarPanel.rotation.z = 0.5 * Math.PI;
+      // solarPanel.rotation.copy(gltf.scene.rotation);
+      // solarPanel.scale.copy(gltf.scene.scale);
+      // solarPanel.position.y += 4;
+      // solarPanel.rotation.x = THREE.MathUtils.degToRad(-35);
+
+      scene.add(gltf.scene);
+      scene.add(solarPanelPivot);
     },
     undefined,
     (error) => {
@@ -476,7 +789,7 @@ function init() {
     1,
     100
   );
-  camera.position.set(-20, 10, 0);
+  camera.position.set(-18, 10, 0);
   camera.lookAt(0, 0, 0);
 
   // Add orbit controls
@@ -484,6 +797,9 @@ function init() {
   controls.enableDamping = true;
   controls.autoRotate = true;
   controls.autoRotateSpeed = 0.4;
+  controls.maxPolarAngle = Math.PI / 2;
+  controls.minDistance = 10;
+  controls.maxDistance = 40;
 
   // Ambient Light
   const ambientLight = new THREE.AmbientLight( 0x999999 );
@@ -506,7 +822,7 @@ function init() {
   updateSunPath();
 
   // Add Axis references
-  const axesHelper = new THREE.AxesHelper( 5 );
+  // const axesHelper = new THREE.AxesHelper( 5 );
   // scene.add( axesHelper );
 
   // Add a Box at the origin
@@ -531,6 +847,14 @@ function init() {
 
   const compassRose = createCompassRose(10);
   scene.add(compassRose);
+
+  heading155Line = createGroundHeadingLine(155, 10);
+  scene.add(heading155Line);
+
+  heading155TiltedLine = createTiltedHeadingLine(155, 90 - 24, 10);
+  scene.add(heading155TiltedLine);
+
+  window.addEventListener('keydown', onKeyDown);
 
   // Add a resize listener
   window.addEventListener( 'resize', onWindowResize );
@@ -558,6 +882,12 @@ function onWindowResize() {
   }
   if (winterSolsticeLine) {
     winterSolsticeLine.material.resolution.set(window.innerWidth, window.innerHeight);
+  }
+  if (heading155Line) {
+    heading155Line.material.resolution.set(window.innerWidth, window.innerHeight);
+  }
+  if (heading155TiltedLine) {
+    heading155TiltedLine.material.resolution.set(window.innerWidth, window.innerHeight);
   }
 }
 
