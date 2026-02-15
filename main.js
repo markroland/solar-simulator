@@ -18,6 +18,7 @@ const longitude = -95.2422898;
 
 const targetElement = 'threejs-container';
 const groundY = 0;
+const ASSET_BASE_URL = import.meta.env.BASE_URL;
 const SOLAR_PANEL_HEADING_DEG = 155;
 const SOLAR_PANEL_TILT_DEG = 24;
 let container;
@@ -805,7 +806,7 @@ function init() {
    * Models
    */
   const dracoLoader = new DRACOLoader()
-  dracoLoader.setDecoderPath('/draco/')
+  dracoLoader.setDecoderPath(`${ASSET_BASE_URL}draco/`)
 
   const gltfLoader = new GLTFLoader()
   gltfLoader.setDRACOLoader(dracoLoader)
@@ -813,7 +814,7 @@ function init() {
   let mixer = null
 
   gltfLoader.load(
-    '/models/house.glb',
+    `${ASSET_BASE_URL}models/house.glb`,
     (gltf) => {
       gltf.scene.rotation.y = THREE.MathUtils.degToRad(270 + 25);
       // gltf.scene.rotation.y = THREE.MathUtils.degToRad(270);
