@@ -13,8 +13,8 @@ import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
 
 import Stats from 'three/addons/libs/stats.module.js';
 
-const latitude =  37.7749; // Default: San Francisco
-const longitude = -122.4194;
+const latitude = 38.9631672;
+const longitude = -95.2422898;
 
 const targetElement = 'threejs-container';
 const groundY = 0;
