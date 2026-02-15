@@ -507,8 +507,17 @@ function setDateAndTimeToNow() {
 }
 
 function parseLocationFromUrl() {
-  const urlText = `${window.location.pathname}${window.location.search}`;
-  const match = urlText.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+  const urlSources = [
+    `${window.location.pathname}${window.location.search}`,
+    window.location.hash || ''
+  ];
+  let match = null;
+  for (const source of urlSources) {
+    match = source.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+    if (match) {
+      break;
+    }
+  }
   if (!match) {
     return null;
   }
@@ -798,6 +807,7 @@ function init() {
 
   applyLocationFromUrl();
   window.addEventListener('popstate', applyLocationFromUrl);
+  window.addEventListener('hashchange', applyLocationFromUrl);
 
   updateTimeMinutesToNow();
   autoTimeIntervalId = setInterval(updateTimeMinutesToNow, 5000);
