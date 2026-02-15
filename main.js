@@ -18,6 +18,8 @@ const longitude = -95.2422898;
 
 const targetElement = 'threejs-container';
 const groundY = 0;
+const SOLAR_PANEL_HEADING_DEG = 155;
+const SOLAR_PANEL_TILT_DEG = 24;
 let container;
 let renderer, scene, camera;
 let controls;
@@ -28,8 +30,6 @@ let cube;
 let cubeGeometry;
 
 const gui = new GUI();
-gui.title('Sun Controls');
-// gui.hide();
 let isGuiVisible = true;
 
 const guiConfig = {
@@ -38,6 +38,7 @@ const guiConfig = {
   longitude: longitude,
   dateString: new Date().toISOString().slice(0, 10),
   timeMinutes: 0,
+  systemPowerKw: 6.885,
 };
 
 const locationConfig = gui.addFolder('Location');
@@ -68,6 +69,11 @@ const timeMinutesController = sunConfig
     updateSunPosition();
   });
 sunConfig.add({ now: setDateAndTimeToNow }, 'now').name('Now');
+
+const solarPanelConfig = gui.addFolder('Solar Panel');
+solarPanelConfig
+  .add(guiConfig, 'systemPowerKw', 0.1, 10, 0.01)
+  .name('System Power (kW)');
 
 let directionalLight;
 let directionalLightHelper;
@@ -544,6 +550,59 @@ function normalizeDegrees(deg) {
   return (deg % 360 + 360) % 360;
 }
 
+function getPanelNormalVector(headingDegrees, tiltDegrees) {
+  const headingRad = THREE.MathUtils.degToRad(headingDegrees - 90);
+  const tiltRad = THREE.MathUtils.degToRad(tiltDegrees);
+  const horizontal = new THREE.Vector3(Math.cos(headingRad), 0, Math.sin(headingRad));
+  return new THREE.Vector3(0, 1, 0)
+    .multiplyScalar(Math.cos(tiltRad))
+    .add(horizontal.multiplyScalar(Math.sin(tiltRad)))
+    .normalize();
+}
+
+function getSunDirectionVector(sunPos) {
+  const azimuth = sunPos.azimuth + Math.PI / 2;
+  const altitude = sunPos.altitude;
+  return new THREE.Vector3(
+    Math.cos(azimuth) * Math.cos(altitude),
+    Math.sin(altitude),
+    Math.sin(azimuth) * Math.cos(altitude)
+  ).normalize();
+}
+
+function getPanelIncidenceFactor(sunPos, panelHeadingDegrees, panelTiltDegrees) {
+  const panelNormal = getPanelNormalVector(panelHeadingDegrees, panelTiltDegrees);
+  const sunDirection = getSunDirectionVector(sunPos);
+  return Math.max(0, panelNormal.dot(sunDirection));
+}
+
+function getPanelPivotYawFromHeading(headingDegrees) {
+  return normalizeDegrees(180 - headingDegrees);
+}
+
+function getDailyPeakIncidence(date, latitude, longitude, panelHeadingDegrees, panelTiltDegrees) {
+  const peak = {
+    factor: 0,
+    time: null
+  };
+  const stepMinutes = 5;
+  const baseDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+  for (let minutes = 0; minutes <= 24 * 60; minutes += stepMinutes) {
+    const sample = new Date(baseDate);
+    sample.setMinutes(minutes);
+    const sunPos = SunCalc.getPosition(sample, latitude, longitude);
+    if (sunPos.altitude <= 0) {
+      continue;
+    }
+    const factor = getPanelIncidenceFactor(sunPos, panelHeadingDegrees, panelTiltDegrees);
+    if (factor > peak.factor) {
+      peak.factor = factor;
+      peak.time = sample;
+    }
+  }
+  return peak;
+}
+
 function getSolsticeDates(year, latitude) {
   const isNorthernHemisphere = latitude >= 0;
   const summer = isNorthernHemisphere ? new Date(year, 5, 21) : new Date(year, 11, 21);
@@ -648,6 +707,17 @@ function updateSunInfo(sunPos) {
   const times = SunCalc.getTimes(getSelectedDate(), guiConfig.latitude, guiConfig.longitude);
   const sunrise = times.sunrise;
   const sunset = times.sunset;
+  const incidenceFactor = getPanelIncidenceFactor(sunPos, SOLAR_PANEL_HEADING_DEG, SOLAR_PANEL_TILT_DEG);
+  const aoiDegrees = THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(incidenceFactor, 0, 1)));
+  const dailyPeak = getDailyPeakIncidence(
+    getSelectedDate(),
+    guiConfig.latitude,
+    guiConfig.longitude,
+    SOLAR_PANEL_HEADING_DEG,
+    SOLAR_PANEL_TILT_DEG
+  );
+  const estimatedPowerKw = guiConfig.systemPowerKw * incidenceFactor;
+  const estimatedPeakPowerKw = guiConfig.systemPowerKw * dailyPeak.factor;
 
   const dayMinutes = sunrise && sunset
     ? Math.max(0, Math.round((sunset.getTime() - sunrise.getTime()) / 60000))
@@ -676,6 +746,14 @@ function updateSunInfo(sunPos) {
     `Sunrise: ${formatTime(sunrise)}`,
     `Sunset: ${formatTime(sunset)}`,
     `Daylight: ${dayHours}h ${dayMins}m`,
+    `Panel Head: ${SOLAR_PANEL_HEADING_DEG.toFixed(1)} deg`,
+    `Panel Tilt: ${SOLAR_PANEL_TILT_DEG.toFixed(1)} deg`,
+    `System Power: ${guiConfig.systemPowerKw.toFixed(3)} kW`,
+    `AOI: ${aoiDegrees.toFixed(2)} deg`,
+    `Incidence: ${(incidenceFactor * 100).toFixed(1)}%`,
+    `Est. Power: ${estimatedPowerKw.toFixed(3)} kW`,
+    `Peak Incidence: ${(dailyPeak.factor * 100).toFixed(1)}% @ ${formatTime(dailyPeak.time)}`,
+    `Est. Peak: ${estimatedPeakPowerKw.toFixed(3)} kW`,
     `Sunrise Az: ${sunriseDeg} deg`,
     `Sunset Az: ${sunsetDeg} deg`
   ].join('\n');
@@ -751,10 +829,11 @@ function init() {
 
       // Keep bottom edge on a fixed Y plane.
       solarPanelPivot.position.set(1.7, 1.2, 1.4);
-      // Rotate around vertical axis.
-      solarPanelPivot.rotation.y = THREE.MathUtils.degToRad(25);
+      // Rotate around vertical axis (compensated so visual mesh matches compass heading).
+      const panelPivotYawDeg = getPanelPivotYawFromHeading(SOLAR_PANEL_HEADING_DEG);
+      solarPanelPivot.rotation.y = THREE.MathUtils.degToRad(panelPivotYawDeg);
       // Tilt panel about its anchored bottom edge.
-      solarPanel.rotation.x = THREE.MathUtils.degToRad(24);
+      solarPanel.rotation.x = THREE.MathUtils.degToRad(SOLAR_PANEL_TILT_DEG);
 
       // solarPanelPivot.position.x += 1.4;
       // solarPanelPivot.position.z += 1.8;
